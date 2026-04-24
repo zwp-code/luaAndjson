@@ -1,0 +1,1125 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lua Table <-> JSON 互转</title>
+    <style>
+      :root {
+        --bg-1: #f4efe6;
+        --bg-2: #e8f0e9;
+        --card: rgba(255, 255, 255, 0.86);
+        --line: #c7d0c2;
+        --ink: #1f2a23;
+        --muted: #58665b;
+        --brand: #2e6f5e;
+        --brand-2: #c7683d;
+        --error: #a62929;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(1100px 700px at 90% -10%, #cde4d4 0%, transparent 60%),
+          radial-gradient(800px 500px at -10% 110%, #edd4b8 0%, transparent 65%),
+          linear-gradient(140deg, var(--bg-1), var(--bg-2));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 22px;
+      }
+
+      .shell {
+        position: relative;
+        width: min(1080px, 100%);
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        box-shadow: 0 20px 55px rgba(46, 60, 49, 0.16);
+        overflow: hidden;
+        animation: rise 480ms ease-out;
+      }
+
+      @keyframes rise {
+        from {
+          transform: translateY(12px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+
+      .header {
+        padding: 22px 22px 12px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(1.3rem, 2.7vw, 2rem);
+      }
+
+      .tip {
+        margin-top: 10px;
+        color: var(--muted);
+        line-height: 1.5;
+        font-size: 0.95rem;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        padding: 14px 22px 22px;
+      }
+
+      .panel {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .panel-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .panel-title strong {
+        font-size: 0.95rem;
+      }
+
+      textarea {
+        width: 100%;
+        height: min(62vh, 540px);
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: #fcfffb;
+        color: #19321f;
+        padding: 14px;
+        resize: vertical;
+        font-size: 14px;
+        line-height: 1.5;
+        font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+      }
+
+      textarea:focus {
+        border-color: var(--brand);
+        outline: 2px solid rgba(46, 111, 94, 0.12);
+      }
+
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 120ms ease, opacity 120ms ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .primary {
+        background: var(--brand);
+        color: #fff;
+      }
+
+      .secondary {
+        background: #ede7db;
+        color: #38493d;
+      }
+
+      .option-row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 0 22px 14px;
+        padding: 10px 12px;
+        border: 1px dashed var(--line);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .option-row input[type="number"] {
+        width: 90px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        padding: 6px 8px;
+        font: inherit;
+        color: var(--ink);
+        background: #fff;
+      }
+
+      .option-row input[type="text"] {
+        width: 140px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        padding: 6px 8px;
+        font: inherit;
+        color: var(--ink);
+        background: #fff;
+      }
+
+      .status {
+        min-height: 24px;
+        margin: 0 22px 22px;
+        padding: 0 4px;
+        font-size: 0.92rem;
+      }
+
+      .ok {
+        color: var(--brand);
+      }
+
+      .err {
+        color: var(--error);
+      }
+
+      .loading-mask {
+        position: absolute;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.68);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+      }
+
+      .loading-mask.show {
+        display: flex;
+      }
+
+      .loading-card {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        font-size: 0.92rem;
+        box-shadow: 0 10px 24px rgba(44, 60, 51, 0.16);
+      }
+
+      .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid #c7d0c2;
+        border-top-color: var(--brand);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (max-width: 900px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        textarea {
+          height: 42vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="header">
+        <h1>Lua Table <-> JSON 互转工具</h1>
+        <div class="tip">
+          支持字符串、数字、布尔、nil、数组和对象结构。Lua 侧建议使用 table 字面量，例如
+          <code>{ name = "Monkey", tags = {"web", "tool"}, ["x-y"] = 1 }</code>。
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="panel">
+          <div class="panel-title">
+            <strong>Lua Table</strong>
+            <div class="actions">
+              <button id="btnToJson" class="primary">转 JSON</button>
+              <button id="btnFormatLua" class="secondary">格式化</button>
+              <button id="btnImportLua" class="secondary">导入文件</button>
+              <button id="btnExportLua" class="secondary">导出文件</button>
+              <button id="btnExportLuaMin" class="secondary">压缩导出</button>
+            </div>
+          </div>
+          <textarea id="luaInput" spellcheck="false">{ user = "demo", active = true, score = 88.5, tags = {"lua", "json"}, profile = { city = "Shanghai", age = 18 }, extra = nil }</textarea>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">
+            <strong>JSON</strong>
+            <div class="actions">
+              <button id="btnToLua" class="primary">转 Lua</button>
+              <button id="btnFormatJson" class="secondary">格式化</button>
+              <button id="btnImportJson" class="secondary">导入文件</button>
+              <button id="btnExportJson" class="secondary">导出文件</button>
+              <button id="btnExportJsonMin" class="secondary">压缩导出</button>
+            </div>
+          </div>
+          <textarea id="jsonInput" spellcheck="false">{
+  "user": "demo",
+  "active": true,
+  "score": 88.5,
+  "tags": ["lua", "json"],
+  "profile": { "city": "Shanghai", "age": 18 },
+  "extra": null
+}</textarea>
+        </div>
+      </section>
+
+      <div class="option-row">
+        <label>
+          <input id="useHeaderData" type="checkbox" checked />
+          JSON 转 Lua 时，字段较多自动使用 header/data 结构
+        </label>
+        <label for="headerThreshold">字段阈值</label>
+        <input id="headerThreshold" type="number" min="2" value="12" />
+        <label for="groupByKey">分组键名</label>
+        <input id="groupByKey" type="text" placeholder="例如 teamid" />
+      </div>
+
+      <div id="status" class="status"></div>
+      <input id="fileInput" type="file" hidden />
+      <div id="loadingMask" class="loading-mask" aria-live="polite">
+        <div class="loading-card">
+          <div class="spinner"></div>
+          <span id="loadingText">处理中...</span>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const luaInput = document.getElementById("luaInput");
+      const jsonInput = document.getElementById("jsonInput");
+      const statusEl = document.getElementById("status");
+      const fileInput = document.getElementById("fileInput");
+      const loadingMask = document.getElementById("loadingMask");
+      const loadingText = document.getElementById("loadingText");
+      const useHeaderData = document.getElementById("useHeaderData");
+      const headerThreshold = document.getElementById("headerThreshold");
+      const groupByKey = document.getElementById("groupByKey");
+      const allButtons = Array.from(document.querySelectorAll("button"));
+      let pendingImportTarget = null;
+      let currentWorkerTask = null;
+      let workerTaskId = 0;
+
+      let converterWorker = createConverterWorker();
+      let workerEnabled = Boolean(converterWorker);
+
+      function resetWorker() {
+        try {
+          if (converterWorker) converterWorker.terminate();
+        } catch (err) {
+          // ignore
+        }
+        converterWorker = createConverterWorker();
+        workerEnabled = Boolean(converterWorker);
+        if (converterWorker) bindWorkerListeners(converterWorker);
+      }
+
+      function fallbackCurrentTaskToLocal(reason) {
+        if (!currentWorkerTask) return false;
+        const { resolve, reject, task, payload } = currentWorkerTask;
+        currentWorkerTask = null;
+
+        try {
+          const result = runTaskLocally(task, payload);
+          setLoading(false);
+          resolve({ ...result, workerFallback: true, workerFallbackReason: reason });
+          return true;
+        } catch (err) {
+          setLoading(false);
+          reject(err);
+          return false;
+        }
+      }
+
+      function bindWorkerListeners(worker) {
+        worker.addEventListener("message", (event) => {
+          if (!currentWorkerTask) return;
+          if (event.data.taskId !== currentWorkerTask.taskId) return;
+
+          const { resolve, reject } = currentWorkerTask;
+          currentWorkerTask = null;
+          setLoading(false);
+
+          if (event.data.ok) {
+            resolve(event.data.result);
+            return;
+          }
+          reject(new Error(event.data.error || "转换失败"));
+        });
+
+        worker.addEventListener("error", (event) => {
+          const detail = event && event.message ? `: ${event.message}` : "";
+          fallbackCurrentTaskToLocal(`Worker 执行异常${detail}`);
+          workerEnabled = false;
+          resetWorker();
+        });
+
+        worker.addEventListener("messageerror", () => {
+          fallbackCurrentTaskToLocal("Worker 消息解析失败，请重试");
+          workerEnabled = false;
+          resetWorker();
+        });
+      }
+
+      if (converterWorker) {
+        bindWorkerListeners(converterWorker);
+      } else {
+        workerEnabled = false;
+      }
+
+      function setStatus(text, isError) {
+        statusEl.textContent = text;
+        statusEl.className = `status ${isError ? "err" : "ok"}`;
+      }
+
+      function setLoading(isLoading, text = "处理中...") {
+        loadingText.textContent = text;
+        loadingMask.classList.toggle("show", isLoading);
+        allButtons.forEach((btn) => {
+          btn.disabled = isLoading;
+        });
+      }
+
+      function runWorkerTask(task, payload, loadingLabel) {
+        if (currentWorkerTask) {
+          return Promise.reject(new Error("已有任务执行中，请稍后再试"));
+        }
+
+        if (!workerEnabled || !converterWorker) {
+          setLoading(true, `${loadingLabel}（兼容模式）`);
+          return new Promise((resolve, reject) => {
+            window.setTimeout(() => {
+              try {
+                const result = runTaskLocally(task, payload);
+                setLoading(false);
+                resolve(result);
+              } catch (err) {
+                setLoading(false);
+                reject(err);
+              }
+            }, 0);
+          });
+        }
+
+        setLoading(true, loadingLabel);
+        return new Promise((resolve, reject) => {
+          const taskId = ++workerTaskId;
+          currentWorkerTask = { taskId, task, payload, resolve, reject };
+          try {
+            converterWorker.postMessage({ taskId, task, payload });
+          } catch (err) {
+            fallbackCurrentTaskToLocal(`Worker 启动失败: ${err.message}`);
+            workerEnabled = false;
+            resetWorker();
+            return;
+          }
+
+          window.setTimeout(() => {
+            if (!currentWorkerTask || currentWorkerTask.taskId !== taskId) return;
+            fallbackCurrentTaskToLocal("转换超时，已切换兼容模式");
+            resetWorker();
+          }, 20000);
+        });
+      }
+
+      function runTaskLocally(task, payload) {
+        if (task === "toJson") {
+          const parsedLua = parseLuaTable(payload.luaText);
+          return { jsonText: JSON.stringify(parsedLua, null, 2) };
+        }
+
+        if (task === "importLua") {
+          const parsedLua = parseLuaTable(payload.text);
+          return { text: toLua(parsedLua).trim() };
+        }
+
+        if (task === "importJson") {
+          const parsedJson = JSON.parse(payload.text);
+          return { text: JSON.stringify(parsedJson, null, 2) };
+        }
+
+        if (task === "toLua") {
+          const parsedJson = JSON.parse(payload.jsonText);
+          const groupedResult = maybeGroupByKey(parsedJson, payload.groupByKey || "");
+
+          let transformed = groupedResult.transformed;
+          let compressedInfo = "";
+          let simplifiedInfo = "";
+
+          if (groupedResult.grouped) {
+            const simplified = maybeSimplifyGroupedSingleField(transformed);
+            transformed = simplified.transformed;
+            if (simplified.simplifiedCount > 0) {
+              simplifiedInfo = `，${simplified.simplifiedCount} 个分组已简化为纯值数组`;
+            }
+
+            const compressGrouped = maybeCompressGroupedData(
+              transformed,
+              payload.useHeaderData,
+              payload.headerThreshold
+            );
+            transformed = compressGrouped.transformed;
+            if (compressGrouped.compressedCount > 0) {
+              compressedInfo = `，${compressGrouped.compressedCount} 个分组已转 header/data`;
+            }
+
+            return {
+              luaText: toLua(transformed).trim(),
+              statusMessage: `JSON -> Lua 转换成功，按 ${groupedResult.keyName} 分组为 ${groupedResult.groupCount} 组${simplifiedInfo}${compressedInfo}`,
+            };
+          }
+
+          const converted = maybeConvertToHeaderData(
+            transformed,
+            payload.useHeaderData,
+            payload.headerThreshold
+          );
+          transformed = converted.transformed;
+          if (converted.compressed) {
+            compressedInfo = `，已压缩为 header/data（${converted.colCount} 列，${converted.rowCount} 行）`;
+          }
+
+          return {
+            luaText: toLua(transformed).trim(),
+            statusMessage: `JSON -> Lua 转换成功${compressedInfo}`,
+          };
+        }
+
+        if (task === "exportLua") {
+          const parsedLua = parseLuaTable(payload.text);
+          return {
+            fileName: "converted.lua",
+            mime: "text/plain;charset=utf-8",
+            content: toLua(parsedLua).trim(),
+          };
+        }
+
+        if (task === "exportLuaMin") {
+          const parsedLua = parseLuaTable(payload.text);
+          return {
+            fileName: "converted.min.lua",
+            mime: "text/plain;charset=utf-8",
+            content: toLuaMinified(parsedLua),
+          };
+        }
+
+        if (task === "exportJson") {
+          const parsedJson = JSON.parse(payload.text);
+          return {
+            fileName: "converted.json",
+            mime: "application/json;charset=utf-8",
+            content: JSON.stringify(parsedJson, null, 2),
+          };
+        }
+
+        if (task === "exportJsonMin") {
+          const parsedJson = JSON.parse(payload.text);
+          return {
+            fileName: "converted.min.json",
+            mime: "application/json;charset=utf-8",
+            content: JSON.stringify(parsedJson),
+          };
+        }
+
+        throw new Error("未知任务类型");
+      }
+
+      function createConverterWorker() {
+        if (typeof Worker === "undefined") {
+          return null;
+        }
+        return new Worker("./converter.worker.js");
+      }
+
+      function isLuaIdentifier(key) {
+        return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
+      }
+
+      function isIntegerKeyString(key) {
+        return /^-?(?:0|[1-9]\d*)$/.test(key);
+      }
+
+      function formatLuaKey(key) {
+        if (isLuaIdentifier(key)) return key;
+        if (isIntegerKeyString(key)) return `[${key}]`;
+        return `["${luaEscapeString(key)}"]`;
+      }
+
+      function isPlainObject(value) {
+        return typeof value === "object" && value !== null && !Array.isArray(value);
+      }
+
+      function getHeaderThreshold() {
+        const num = Number.parseInt(headerThreshold.value, 10);
+        return Number.isInteger(num) && num >= 2 ? num : 12;
+      }
+
+      function maybeConvertToHeaderData(value) {
+        if (!useHeaderData.checked) {
+          return { transformed: value, compressed: false };
+        }
+        if (!Array.isArray(value) || value.length === 0 || !value.every((item) => isPlainObject(item))) {
+          return { transformed: value, compressed: false };
+        }
+
+        const header = [];
+        const seen = new Set();
+        value.forEach((record) => {
+          Object.keys(record).forEach((key) => {
+            if (!seen.has(key)) {
+              seen.add(key);
+              header.push(key);
+            }
+          });
+        });
+
+        if (header.length < getHeaderThreshold()) {
+          return { transformed: value, compressed: false };
+        }
+
+        const data = value.map((record) =>
+          header.map((key) => (Object.prototype.hasOwnProperty.call(record, key) ? record[key] : null))
+        );
+
+        return {
+          transformed: { header, data },
+          compressed: true,
+          rowCount: data.length,
+          colCount: header.length,
+        };
+      }
+
+      function maybeGroupByKey(value) {
+        const keyName = groupByKey.value.trim();
+        if (!keyName) {
+          return { transformed: value, grouped: false };
+        }
+
+        if (!Array.isArray(value) || value.length === 0 || !value.every((item) => isPlainObject(item))) {
+          return { transformed: value, grouped: false };
+        }
+
+        const grouped = {};
+        for (const record of value) {
+          if (!Object.prototype.hasOwnProperty.call(record, keyName)) {
+            throw new Error(`存在记录缺少分组键: ${keyName}`);
+          }
+
+          const rawKey = record[keyName];
+          const groupKey = String(rawKey);
+          const item = { ...record };
+          delete item[keyName];
+
+          if (!Object.prototype.hasOwnProperty.call(grouped, groupKey)) {
+            grouped[groupKey] = [];
+          }
+          grouped[groupKey].push(item);
+        }
+
+        return {
+          transformed: grouped,
+          grouped: true,
+          keyName,
+          groupCount: Object.keys(grouped).length,
+        };
+      }
+
+      function maybeCompressGroupedData(value) {
+        if (!isPlainObject(value)) {
+          return { transformed: value, compressedCount: 0 };
+        }
+
+        let compressedCount = 0;
+        const out = {};
+        Object.keys(value).forEach((key) => {
+          const result = maybeConvertToHeaderData(value[key]);
+          out[key] = result.transformed;
+          if (result.compressed) compressedCount += 1;
+        });
+
+        return { transformed: out, compressedCount };
+      }
+
+      function maybeSimplifyGroupedSingleField(value) {
+        if (!isPlainObject(value)) {
+          return { transformed: value, simplifiedCount: 0 };
+        }
+
+        let simplifiedCount = 0;
+        const out = {};
+
+        Object.keys(value).forEach((key) => {
+          const groupRows = value[key];
+          const canSimplify =
+            Array.isArray(groupRows) &&
+            groupRows.length > 0 &&
+            groupRows.every((row) => isPlainObject(row) && Object.keys(row).length === 1);
+
+          if (!canSimplify) {
+            out[key] = groupRows;
+            return;
+          }
+
+          out[key] = groupRows.map((row) => {
+            const onlyKey = Object.keys(row)[0];
+            return row[onlyKey];
+          });
+          simplifiedCount += 1;
+        });
+
+        return { transformed: out, simplifiedCount };
+      }
+
+      function readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.onerror = () => reject(new Error("读取文件失败"));
+          reader.readAsText(file, "utf-8");
+        });
+      }
+
+      function requestImport(target, accept) {
+        pendingImportTarget = target;
+        fileInput.accept = accept;
+        fileInput.value = "";
+        fileInput.click();
+      }
+
+      function exportTextFile(fileName, content, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      function luaEscapeString(value) {
+        return value
+          .replace(/\\/g, "\\\\")
+          .replace(/\n/g, "\\n")
+          .replace(/\r/g, "\\r")
+          .replace(/\t/g, "\\t")
+          .replace(/"/g, '\\"');
+      }
+
+      function toLua(value, indent = 0) {
+        const pad = "  ".repeat(indent);
+        const nextPad = "  ".repeat(indent + 1);
+
+        if (value === null) return "nil";
+        if (typeof value === "number") {
+          if (!Number.isFinite(value)) throw new Error("JSON 中包含 Infinity/NaN，Lua 不支持");
+          return String(value);
+        }
+        if (typeof value === "boolean") return value ? "true" : "false";
+        if (typeof value === "string") return `"${luaEscapeString(value)}"`;
+
+        if (Array.isArray(value)) {
+          if (value.length === 0) return "{}";
+          const lines = value.map((item) => `${nextPad}${toLua(item, indent + 1)}`);
+          return `\n${pad}{\n${lines.join(",\n")}\n${pad}}`;
+        }
+
+        if (typeof value === "object") {
+          const keys = Object.keys(value);
+          if (keys.length === 0) return "{}";
+          const lines = keys.map((key) => {
+            const k = formatLuaKey(key);
+            return `${nextPad}${k} = ${toLua(value[key], indent + 1)}`;
+          });
+          return `\n${pad}{\n${lines.join(",\n")}\n${pad}}`;
+        }
+
+        throw new Error("检测到不支持的 JSON 值类型");
+      }
+
+      function toLuaMinified(value) {
+        if (value === null) return "nil";
+        if (typeof value === "number") {
+          if (!Number.isFinite(value)) throw new Error("JSON 中包含 Infinity/NaN，Lua 不支持");
+          return String(value);
+        }
+        if (typeof value === "boolean") return value ? "true" : "false";
+        if (typeof value === "string") return `"${luaEscapeString(value)}"`;
+
+        if (Array.isArray(value)) {
+          if (value.length === 0) return "{}";
+          return `{${value.map((item) => toLuaMinified(item)).join(",")}}`;
+        }
+
+        if (typeof value === "object") {
+          const keys = Object.keys(value);
+          if (keys.length === 0) return "{}";
+          return `{${keys.map((key) => `${formatLuaKey(key)}=${toLuaMinified(value[key])}`).join(",")}}`;
+        }
+
+        throw new Error("检测到不支持的 JSON 值类型");
+      }
+
+      function parseLuaTable(input) {
+        const s = input.trim();
+        let i = 0;
+
+        function error(msg) {
+          throw new Error(`${msg} (位置 ${i + 1})`);
+        }
+
+        function peek() {
+          return s[i];
+        }
+
+        function skipWhitespace() {
+          while (i < s.length && /\s/.test(s[i])) i += 1;
+        }
+
+        function expect(ch) {
+          skipWhitespace();
+          if (s[i] !== ch) error(`期望 '${ch}'`);
+          i += 1;
+        }
+
+        function parseString() {
+          skipWhitespace();
+          const quote = s[i];
+          if (quote !== '"' && quote !== "'") error("期望字符串");
+          i += 1;
+          let out = "";
+          while (i < s.length) {
+            const ch = s[i];
+            if (ch === quote) {
+              i += 1;
+              return out;
+            }
+            if (ch === "\\") {
+              i += 1;
+              if (i >= s.length) error("字符串转义不完整");
+              const esc = s[i];
+              const map = { n: "\n", r: "\r", t: "\t", "\\": "\\", '"': '"', "'": "'" };
+              out += Object.prototype.hasOwnProperty.call(map, esc) ? map[esc] : esc;
+              i += 1;
+              continue;
+            }
+            out += ch;
+            i += 1;
+          }
+          error("字符串未闭合");
+        }
+
+        function parseIdentifier() {
+          skipWhitespace();
+          const m = /^[A-Za-z_][A-Za-z0-9_]*/.exec(s.slice(i));
+          if (!m) return null;
+          i += m[0].length;
+          return m[0];
+        }
+
+        function parseNumber() {
+          skipWhitespace();
+          const m = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(s.slice(i));
+          if (!m) error("期望数字");
+          i += m[0].length;
+          return Number(m[0]);
+        }
+
+        function parseValue() {
+          skipWhitespace();
+          const ch = peek();
+          if (ch === "{" ) return parseTable();
+          if (ch === '"' || ch === "'") return parseString();
+          if (ch === "-" || /\d/.test(ch)) return parseNumber();
+
+          const id = parseIdentifier();
+          if (id === null) error("无法解析值");
+          if (id === "true") return true;
+          if (id === "false") return false;
+          if (id === "nil") return null;
+          return id;
+        }
+
+        function parseTable() {
+          expect("{");
+          skipWhitespace();
+          const arr = [];
+          const obj = {};
+          let seqIndex = 1;
+          let hasObjKey = false;
+          let hasArrValue = false;
+
+          while (i < s.length) {
+            skipWhitespace();
+            if (peek() === "}") {
+              i += 1;
+              break;
+            }
+
+            let consumedKey = false;
+            let key;
+            let value;
+
+            if (peek() === "[") {
+              i += 1;
+              skipWhitespace();
+              key = parseValue();
+              skipWhitespace();
+              expect("]");
+              skipWhitespace();
+              expect("=");
+              value = parseValue();
+              consumedKey = true;
+            } else {
+              const start = i;
+              const id = parseIdentifier();
+              if (id !== null) {
+                skipWhitespace();
+                if (peek() === "=") {
+                  i += 1;
+                  key = id;
+                  value = parseValue();
+                  consumedKey = true;
+                } else {
+                  i = start;
+                  value = parseValue();
+                }
+              } else {
+                value = parseValue();
+              }
+            }
+
+            if (consumedKey) {
+              const keyType = typeof key;
+              if (keyType !== "string" && keyType !== "number") {
+                error("Lua table 键仅支持字符串或数字");
+              }
+              if (typeof key === "number" && Number.isInteger(key) && key > 0 && key === seqIndex) {
+                arr.push(value);
+                seqIndex += 1;
+                hasArrValue = true;
+              } else {
+                obj[String(key)] = value;
+                hasObjKey = true;
+              }
+            } else {
+              arr.push(value);
+              seqIndex += 1;
+              hasArrValue = true;
+            }
+
+            skipWhitespace();
+            if (peek() === "," || peek() === ";") {
+              i += 1;
+              continue;
+            }
+            if (peek() === "}") {
+              i += 1;
+              break;
+            }
+            error("字段之间应使用 ','、';' 或结束 '}'");
+          }
+
+          if (hasObjKey && hasArrValue) {
+            arr.forEach((v, idx) => {
+              obj[String(idx + 1)] = v;
+            });
+            return obj;
+          }
+          return hasObjKey ? obj : arr;
+        }
+
+        const out = parseValue();
+        skipWhitespace();
+        if (i !== s.length) error("存在未解析的内容");
+        return out;
+      }
+
+      document.getElementById("btnToJson").addEventListener("click", async () => {
+        try {
+          const result = await runWorkerTask(
+            "toJson",
+            { luaText: luaInput.value },
+            "Lua -> JSON 转换中..."
+          );
+          jsonInput.value = result.jsonText;
+          setStatus("Lua -> JSON 转换成功", false);
+        } catch (err) {
+          setStatus(`Lua 解析失败: ${err.message}`, true);
+        }
+      });
+
+      document.getElementById("btnToLua").addEventListener("click", async () => {
+        try {
+          const result = await runWorkerTask(
+            "toLua",
+            {
+              jsonText: jsonInput.value,
+              groupByKey: groupByKey.value,
+              useHeaderData: useHeaderData.checked,
+              headerThreshold: getHeaderThreshold(),
+            },
+            "JSON -> Lua 转换中..."
+          );
+
+          luaInput.value = result.luaText;
+          setStatus(result.statusMessage || "JSON -> Lua 转换成功", false);
+        } catch (err) {
+          setStatus(`JSON 解析失败: ${err.message}`, true);
+        }
+      });
+
+      document.getElementById("btnFormatJson").addEventListener("click", () => {
+        try {
+          jsonInput.value = JSON.stringify(JSON.parse(jsonInput.value), null, 2);
+          setStatus("JSON 格式化成功", false);
+        } catch (err) {
+          setStatus(`JSON 格式化失败: ${err.message}`, true);
+        }
+      });
+
+      document.getElementById("btnFormatLua").addEventListener("click", () => {
+        try {
+          luaInput.value = toLua(parseLuaTable(luaInput.value)).trim();
+          setStatus("Lua 格式化成功", false);
+        } catch (err) {
+          setStatus(`Lua 格式化失败: ${err.message}`, true);
+        }
+      });
+
+      document.getElementById("btnImportLua").addEventListener("click", () => {
+        requestImport("lua", ".lua,.txt,.json");
+      });
+
+      document.getElementById("btnImportJson").addEventListener("click", () => {
+        requestImport("json", ".json,.txt");
+      });
+
+      document.getElementById("btnExportLua").addEventListener("click", async () => {
+        try {
+          const result = await runWorkerTask(
+            "exportLua",
+            { text: luaInput.value },
+            "Lua 导出处理中..."
+          );
+          exportTextFile(result.fileName, result.content, result.mime);
+          setStatus("Lua 文件导出成功", false);
+        } catch (err) {
+          setStatus(`Lua 导出失败: ${err.message}`, true);
+        }
+      });
+
+      document.getElementById("btnExportLuaMin").addEventListener("click", async () => {
+        try {
+          const result = await runWorkerTask(
+            "exportLuaMin",
+            { text: luaInput.value },
+            "Lua 压缩导出处理中..."
+          );
+          exportTextFile(result.fileName, result.content, result.mime);
+          setStatus("Lua 压缩导出成功", false);
+        } catch (err) {
+          setStatus(`Lua 压缩导出失败: ${err.message}`, true);
+        }
+      });
+
+      document.getElementById("btnExportJson").addEventListener("click", async () => {
+        try {
+          const result = await runWorkerTask(
+            "exportJson",
+            { text: jsonInput.value },
+            "JSON 导出处理中..."
+          );
+          exportTextFile(result.fileName, result.content, result.mime);
+          setStatus("JSON 文件导出成功", false);
+        } catch (err) {
+          setStatus(`JSON 导出失败: ${err.message}`, true);
+        }
+      });
+
+      document.getElementById("btnExportJsonMin").addEventListener("click", async () => {
+        try {
+          const result = await runWorkerTask(
+            "exportJsonMin",
+            { text: jsonInput.value },
+            "JSON 压缩导出处理中..."
+          );
+          exportTextFile(result.fileName, result.content, result.mime);
+          setStatus("JSON 压缩导出成功", false);
+        } catch (err) {
+          setStatus(`JSON 压缩导出失败: ${err.message}`, true);
+        }
+      });
+
+      fileInput.addEventListener("change", async () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file || !pendingImportTarget) return;
+        try {
+          setLoading(true, "文件读取中...");
+          const text = await readFileAsText(file);
+          setLoading(false);
+
+          if (pendingImportTarget === "lua") {
+            const result = await runWorkerTask(
+              "importLua",
+              { text },
+              "Lua 导入解析中..."
+            );
+            luaInput.value = result.text;
+            setStatus(`Lua 文件导入成功: ${file.name}`, false);
+          } else {
+            const result = await runWorkerTask(
+              "importJson",
+              { text },
+              "JSON 导入解析中..."
+            );
+            jsonInput.value = result.text;
+            setStatus(`JSON 文件导入成功: ${file.name}`, false);
+          }
+        } catch (err) {
+          setLoading(false);
+          setStatus(`文件导入失败: ${err.message}`, true);
+        } finally {
+          pendingImportTarget = null;
+        }
+      });
+    </script>
+  </body>
+</html>
